@@ -33,7 +33,7 @@ const Dialer: React.FC<DialerProps> = ({ phoneNumber, setPhoneNumber }) => {
           placeholder="+1 (555) 000-0000"
         />
       </div>
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-3 gap-4 justify-items-center">
         {dialerButtons.map((button) => (
           <button
             key={button}
@@ -78,7 +78,7 @@ const FloatingCallButton = () => {
       {/* Dialer Modal */}
       {isDialerOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md max-h-[100vh] overflow-y-auto hide-scrollbar">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-semibold">New Call</h2>
               <button

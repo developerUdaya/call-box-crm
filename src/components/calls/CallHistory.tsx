@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, Download, Filter, Search, Clock, Play, Pause, SkipBack, SkipForward, Mic, FileText, Calendar, Tag } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, Download, Filter, Search, Clock, Play, Pause, SkipBack, SkipForward, Mic, FileText, Calendar, Tag, XCircle } from 'lucide-react';
+import axios from 'axios';
 
 interface RecordingDialogProps {
   isOpen: boolean;
@@ -101,64 +102,101 @@ const RecordingDialog: React.FC<RecordingDialogProps> = ({ isOpen, onClose, reco
 };
 
 const CallHistory = () => {
+  const [calls, setCalls] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<'all' | 'completed' | 'missed'>('all');
   const [selectedRecording, setSelectedRecording] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [dateFilter, setDateFilter] = useState('all');
+  
+  useEffect(() => {
+    const fetchCalls = async () => {
+      const agentId = 'AGENT046';
+      let endpoint = `https://caller-crm-api.justvy.in/call/?agentId=${agentId}`;
+      if (dateFilter === 'today') {
+        endpoint = `https://caller-crm-api.justvy.in/calls/filter/?range=today&agent_id=${agentId}`;
+      } else if (dateFilter === 'week') {
+        endpoint = `https://caller-crm-api.justvy.in/calls/filter/?range=this_week&agent_id=${agentId}`;
+      } else if (dateFilter === 'month') {
+        endpoint = `https://caller-crm-api.justvy.in/calls/filter/?range=this_month&agent_id=${agentId}`;
+      }
 
-  const calls = [
-    {
-      id: '1',
-      name: 'Sarah Wilson',
-      number: '+1 (555) 123-4567',
-      type: 'incoming',
-      status: 'completed',
-      duration: '5:23',
-      date: '2024-03-15',
-      time: '10:30 AM',
-      sentiment: 'positive',
-      hasRecording: true,
-      hasTranscript: true,
-      notes: 'Discussed new product features and pricing',
-      tags: ['sales', 'follow-up'],
-      agent: 'John Doe'
-    },
-    {
-      id: '2',
-      name: 'Michael Brown',
-      number: '+1 (555) 987-6543',
-      type: 'outgoing',
-      status: 'completed',
-      duration: '3:45',
-      date: '2024-03-15',
-      time: '11:15 AM',
-      sentiment: 'neutral',
-      hasRecording: true,
-      hasTranscript: false,
-      notes: 'Technical support call regarding API integration',
-      tags: ['support', 'technical'],
-      agent: 'Jane Smith'
-    },
-    {
-      id: '3',
-      name: 'Emma Davis',
-      number: '+1 (555) 234-5678',
-      type: 'incoming',
-      status: 'missed',
-      duration: '',
-      date: '2024-03-14',
-      time: '2:30 PM',
-      sentiment: 'neutral',
-      hasRecording: false,
-      hasTranscript: false,
-      notes: 'Missed call - no voicemail',
-      tags: ['follow-up'],
-      agent: '-'
-    }
-  ];
+      try {
+        setLoading(true);
+        setError(null);
+
+        const response = await axios.get(endpoint);
+        console.log('API response:', response.data);
+
+        let apiCalls: any[] = [];
+
+        if (Array.isArray(response.data)) {
+          apiCalls = response.data;
+        } else if (Array.isArray(response.data.calls)) {
+          apiCalls = response.data.calls;
+        } else if (Array.isArray(response.data.data)) {
+          apiCalls = response.data.data;
+        } else {
+          apiCalls = [];
+        }
+
+        const agentResponse = await axios.get(`https://caller-crm-api.justvy.in/agent/${agentId}`);
+        const agentName = agentResponse.data?.agent?.name || 'Unknown Agent';
+
+        const sortedCalls = [...apiCalls].sort((a, b) => new Date(b.dateTime).getTime() - new Date(a.dateTime).getTime());
+
+        const formattedCalls = sortedCalls.map((call: any) => {
+          const dateObj = new Date(call.dateTime);
+
+          return {
+            id: call.id,
+            name: call.name || 'Unknown',
+            number: call.mobileNumber,
+            type: call.callType?.toLowerCase() || '',
+            status: call.callType?.toLowerCase() || 'unknown',
+            duration: call.duration
+              ? `${Math.floor(call.duration / 60)}:${String(call.duration % 60).padStart(2, '0')}`
+              : '',
+            date: dateObj.toISOString().split('T')[0],
+            time: dateObj.toLocaleTimeString('en-US', {
+              hour: 'numeric',
+              minute: '2-digit',
+              hour12: true,
+            }),
+            sentiment: 'neutral',
+            hasRecording: !!call.recording_url,
+            hasTranscript: true,
+            notes: call.comment || '',
+            tags: [],
+            agent: agentName || '-',
+            recording_url: call.recording_url || null,
+          };
+        });
+
+        setCalls(formattedCalls);
+      } catch (err: any) {
+        console.error('Error fetching call data:', err);
+
+        if (err?.response?.status >= 500 || err?.message?.includes('Network')) {
+          setError('Failed to fetch call history.');
+        } else {
+          setCalls([]);
+        }  
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchCalls();
+  }, [dateFilter]); 
 
   const filteredCalls = calls.filter(call => {
-    if (filterStatus !== 'all' && call.status !== filterStatus) return false;
+    if (filterStatus === 'completed') {
+      if (!(call.status === 'incoming' || call.status === 'outgoing')) return false;
+    } else if (filterStatus !== 'all' && call.status !== filterStatus) {
+      return false;
+    }
+
     if (searchQuery) {
       const searchLower = searchQuery.toLowerCase();
       return (
@@ -167,8 +205,12 @@ const CallHistory = () => {
         call.notes.toLowerCase().includes(searchLower)
       );
     }
+
     return true;
   });
+
+  if (loading) return <p className="text-center py-4">Loading call history...</p>;
+  if (error) return <p className="text-center text-red-500 py-4">{error}</p>;
 
   return (
     <div className="space-y-6">
@@ -178,7 +220,7 @@ const CallHistory = () => {
           <div className="flex-1 relative">
             <input
               type="text"
-              placeholder="Search calls..."
+              placeholder="Search calls"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -241,93 +283,118 @@ const CallHistory = () => {
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {filteredCalls.map((call) => (
-              <tr key={call.id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="flex items-center">
-                    <div className="flex-shrink-0 h-10 w-10 bg-gray-100 rounded-full flex items-center justify-center">
-                      <span className="text-sm font-medium text-gray-600">
-                        {call.name.split(' ').map(n => n[0]).join('')}
-                      </span>
-                    </div>
-                    <div className="ml-4">
-                      <div className="text-sm font-medium text-gray-900">{call.name}</div>
-                      <div className="text-sm text-gray-500">{call.number}</div>
-                    </div>
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="flex items-center">
-                    {call.type === 'incoming' ? (
-                      <PhoneIncoming className="h-4 w-4 text-green-500 mr-1" />
-                    ) : (
-                      <PhoneOutgoing className="h-4 w-4 text-blue-500 mr-1" />
-                    )}
-                    <span className={`px-2 py-1 text-xs rounded-full ${
-                      call.status === 'completed'
-                        ? 'bg-green-100 text-green-800'
-                        : 'bg-red-100 text-red-800'
-                    }`}>
-                      {call.status}
-                    </span>
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  <div className="flex items-center">
-                    <Calendar className="h-4 w-4 mr-1 text-gray-400" />
-                    <span>{call.date}</span>
-                    <Clock className="h-4 w-4 mx-1 text-gray-400" />
-                    <span>{call.time}</span>
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {call.duration || '-'}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {call.agent}
-                </td>
-                <td className="px-6 py-4 text-sm text-gray-500">
-                  <div>
-                    <p className="line-clamp-2">{call.notes}</p>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {call.tags.map((tag, index) => (
-                        <span
-                          key={index}
-                          className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800"
-                        >
-                          <Tag className="h-3 w-3 mr-1" />
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  <div className="flex space-x-2">
-                    {call.hasRecording && (
-                      <button
-                        onClick={() => setSelectedRecording({
-                          id: call.id,
-                          date: call.date,
-                          duration: call.duration,
-                          url: '#' // Replace with actual recording URL
-                        })}
-                        className="flex items-center text-blue-600 hover:text-blue-700"
-                      >
-                        <Mic className="h-4 w-4 mr-1" />
-                        Recording
-                      </button>
-                    )}
-                    {call.hasTranscript && (
-                      <button className="flex items-center text-blue-600 hover:text-blue-700">
-                        <FileText className="h-4 w-4 mr-1" />
-                        Transcript
-                      </button>
-                    )}
-                  </div>
+            {filteredCalls.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="text-center py-10 text-gray-500">
+                  No call history available for the selected time range.
                 </td>
               </tr>
-            ))}
+            ) : (
+              filteredCalls.map((call) => (
+                <tr key={call.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center">
+                      <div className="flex-shrink-0 h-10 w-10 bg-gray-100 rounded-full flex items-center justify-center">
+                        <span className="text-sm font-medium text-gray-600">
+                          {call.name.split(' ').map((n: string) => n[0]).join('')}
+                        </span>
+                      </div>
+                      <div className="ml-4">
+                        <div className="text-sm font-medium text-gray-900">{call.name}</div>
+                        <div className="text-sm text-gray-500">{call.number}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center">
+                      {call.type === 'incoming' && (
+                        <PhoneIncoming className="h-4 w-4 text-green-500 mr-1" />
+                      )}
+                      {call.type === 'outgoing' && (
+                        <PhoneOutgoing className="h-4 w-4 text-blue-500 mr-1" />
+                      )}
+                      {call.type === 'missed' && (
+                        <PhoneMissed className="h-4 w-4 text-red-500 mr-1" />
+                      )}
+                      {call.type === 'declined' && (
+                        <XCircle className="h-4 w-4 text-yellow-500 mr-1" />
+                      )}
+                      <span
+                        className={`px-2 py-1 text-xs rounded-full ${
+                          call.status === 'incoming'
+                            ? 'bg-green-100 text-green-800'
+                            : call.status === 'outgoing'
+                            ? 'bg-blue-100 text-blue-800'
+                            : call.status === 'missed'
+                            ? 'bg-red-100 text-red-800'
+                            : call.status === 'declined'
+                            ? 'bg-yellow-100 text-yellow-800'
+                            : 'bg-gray-100 text-gray-800'
+                        }`}
+                      >
+                        {call.status}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <div className="flex items-center">
+                      <Calendar className="h-4 w-4 mr-1 text-gray-400" />
+                      <span>{call.date}</span>
+                      <Clock className="h-4 w-4 mx-1 text-gray-400" />
+                      <span>{call.time}</span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {call.duration || '-'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {call.agent}
+                  </td>
+                  <td className="px-6 py-4 text-sm text-gray-500">
+                    <div>
+                      <p className="line-clamp-2">{call.notes}</p>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {call.tags.map((tag: string, index: number) => (
+                          <span
+                            key={index}
+                            className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800"
+                          >
+                            <Tag className="h-3 w-3 mr-1" />
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <div className="flex space-x-2">
+                      {call.hasRecording && (
+                        <button
+                          onClick={() =>
+                            setSelectedRecording({
+                              id: call.id,
+                              date: call.date,
+                              duration: call.duration,
+                              url: call.recording_url,
+                            })
+                          }
+                          className="flex items-center text-blue-600 hover:text-blue-700"
+                        >
+                          <Mic className="h-4 w-4 mr-1" />
+                          Recording
+                        </button>
+                      )}
+                      {call.hasTranscript && (
+                        <button className="flex items-center text-blue-600 hover:text-blue-700">
+                          <FileText className="h-4 w-4 mr-1" />
+                          Transcript
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>
