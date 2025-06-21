@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
-import { Phone, Mail, Calendar, MessageSquare, Edit, Trash, Clock, Tag, FileText, MapPin, Truck, CreditCard } from 'lucide-react';
-import { Contact } from '../../types';
+import { Phone, Mail, Calendar, MessageSquare, Edit, Trash, Clock, Tag, MapPin, Truck, CreditCard, Loader } from 'lucide-react';
+import { getCallAPi } from '../../Api-Services/CallApis';
+import { InvalidateQueryFilters, useQuery, useQueryClient } from '@tanstack/react-query';
+import { formatDate, formatTime } from '../../lib/utils';
+import ContactModal from './ContactModal';
+import { deleteCustomerAPi } from '../../Api-Services/ContactApis';
 
 interface OrderDetailsDialogProps {
   isOpen: boolean;
@@ -22,9 +26,8 @@ const OrderDetailsDialog: React.FC<OrderDetailsDialogProps> = ({ isOpen, onClose
         <div className="space-y-6">
           {/* Order Status */}
           <div className="flex items-center justify-between">
-            <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-              order.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
-            }`}>
+            <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${order.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+              }`}>
               {order.status}
             </span>
             <p className="text-gray-600">Order Date: {order.date}</p>
@@ -137,23 +140,46 @@ const OrderDetailsDialog: React.FC<OrderDetailsDialogProps> = ({ isOpen, onClose
 };
 
 interface ContactDetailsProps {
-  contact: Contact;
+  data: any;
+  selectId: any;
+  setSelectedContact: any;
 }
 
-const ContactDetails: React.FC<ContactDetailsProps> = ({ contact }) => {
+const ContactDetails: React.FC<ContactDetailsProps> = ({ data, selectId, setSelectedContact }: ContactDetailsProps) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'calls' | 'notes' | 'orders'>('overview');
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
+  const [editModal, setEditModal] = useState(false);
+  const [editData, setEditData] = useState<any>();
+  const [deleteModal, setDeleteModal] = useState(false);
+  const [deleteData, setDeleteData] = useState<any>('')
+  const [loader, setLoader] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('')
+  const queryClient = useQueryClient();
 
-  const callHistory = [
-    { date: '2024-03-15', time: '10:30 AM', duration: '5:23', type: 'incoming', status: 'completed' },
-    { date: '2024-03-14', time: '2:45 PM', duration: '3:15', type: 'outgoing', status: 'completed' },
-    { date: '2024-03-13', time: '11:20 AM', duration: '', type: 'incoming', status: 'missed' },
-  ];
+  const contact = data?.find((item: any) => item?.id === selectId?.id)
 
-  const notes = [
-    { date: '2024-03-15', content: 'Discussed new product requirements', author: 'John Doe' },
-    { date: '2024-03-14', content: 'Follow-up on previous meeting', author: 'Jane Smith' },
-  ];
+  const getCallData: any = useQuery({
+    queryKey: ['getCallData', selectId?.id],
+    queryFn: () => getCallAPi(`?customerId=${selectId?.id}`),
+  })
+  const callHistory = getCallData?.data?.data?.calls
+
+  const handleDelete = async () => {
+    setErrorMessage('');
+    setLoader(true);
+    try {
+      const updateApi = await deleteCustomerAPi(`${deleteData?.id}`)
+      if (updateApi) {
+        setLoader(false);
+        setDeleteModal(false);
+        setSelectedContact('');
+        queryClient.invalidateQueries(['getCustomerData'] as InvalidateQueryFilters);
+      }
+    } catch (error: any) {
+      setErrorMessage(error?.response?.data?.message || "Something went wrong. Please try again.")
+      setLoader(false);
+    }
+  }
 
   const orders = [
     {
@@ -184,44 +210,47 @@ const ContactDetails: React.FC<ContactDetailsProps> = ({ contact }) => {
       ]
     },
   ];
-
   return (
     <div className="bg-white rounded-lg shadow">
       {/* Header */}
       <div className="p-6 border-b">
-        <div className="flex justify-between items-start">
+        <div className="flex justify-between items-start flex-wrap">
           <div className="flex items-center">
             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mr-4">
               <span className="text-2xl text-gray-600 font-medium">
-                {contact.name.split(' ').map(n => n[0]).join('')}
+                {contact?.name?.split(' ').map((n: any) => n[0]).join('')}
               </span>
             </div>
             <div>
-              <h2 className="text-2xl font-bold text-gray-900">{contact.name}</h2>
-              <div className="mt-1 flex items-center space-x-4">
+              <h2 className="text-2xl font-bold text-gray-900">{contact?.name}</h2>
+              <div className="mt-1  ">
                 <span className="flex items-center text-gray-500">
                   <Phone className="h-4 w-4 mr-1" />
-                  {contact.phone}
+                  {contact?.mobileNumber}
                 </span>
-                <span className="flex items-center text-gray-500">
+                <span className="flex mt-1 items-center text-gray-500">
                   <Mail className="h-4 w-4 mr-1" />
-                  {contact.email}
+                  {contact?.email}
                 </span>
               </div>
             </div>
           </div>
           <div className="flex space-x-2">
-            <button className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg">
+            <button className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
+              onClick={() => { setEditModal(!editModal), setEditData(contact) }}
+            >
               <Edit className="h-5 w-5" />
             </button>
-            <button className="p-2 text-red-600 hover:bg-red-50 rounded-lg">
+            <button className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+              onClick={() => { setDeleteModal(!deleteModal), setDeleteData(contact) }}
+            >
               <Trash className="h-5 w-5" />
             </button>
           </div>
         </div>
 
         <div className="flex flex-wrap gap-2 mt-4">
-          {contact.tags.map(tag => (
+          {contact?.tags.map((tag: any) => (
             <span
               key={tag}
               className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800"
@@ -235,16 +264,15 @@ const ContactDetails: React.FC<ContactDetailsProps> = ({ contact }) => {
 
       {/* Tabs */}
       <div className="border-b">
-        <nav className="-mb-px flex">
-          {['overview', 'calls', 'notes', 'orders'].map((tab) => (
+        <nav className="-mb-px flex flex-wrap">
+          {['overview', 'calls', 'notes', 'orders']?.map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab as typeof activeTab)}
-              className={`py-4 px-6 text-sm font-medium border-b-2 ${
-                activeTab === tab
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
+              className={`py-4 px-6 text-sm font-medium border-b-2 ${activeTab === tab
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
             >
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
             </button>
@@ -277,90 +305,137 @@ const ContactDetails: React.FC<ContactDetailsProps> = ({ contact }) => {
             <div>
               <h3 className="text-lg font-medium text-gray-900 mb-4">Recent Activity</h3>
               <div className="space-y-4">
-                {callHistory.slice(0, 3).map((call, index) => (
-                  <div key={index} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                    <div className="flex items-center">
-                      <Clock className="h-5 w-5 text-gray-400 mr-3" />
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">
-                          {call.type === 'incoming' ? 'Incoming' : 'Outgoing'} Call
-                        </p>
-                        <p className="text-sm text-gray-500">{call.date} at {call.time}</p>
+                {callHistory && callHistory.length > 0 ? (
+                  callHistory.slice(0, 3).map((call: any, index: number) => (
+                    <div key={index} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                      <div className="flex items-center">
+                        <Clock className="h-5 w-5 text-gray-400 mr-3" />
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">
+                            {call?.callType === 'INCOMING' ? 'Incoming' : 'Outgoing'} Call
+                          </p>
+                          <p className="text-sm text-gray-500">{formatDate(call?.dateTime)} at {formatTime(call?.dateTime)}</p>
+                        </div>
                       </div>
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${call?.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                        }`}>
+                        {call?.status}
+                      </span>
                     </div>
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      call.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                    }`}>
-                      {call.status}
-                    </span>
-                  </div>
-                ))}
+                  ))
+                ) : (
+                  <p className="text-center text-sm text-gray-500">No call history available.</p>
+                )}
               </div>
+
             </div>
           </div>
         )}
 
         {activeTab === 'calls' && (
           <div className="space-y-4">
-            {callHistory.map((call, index) => (
-              <div key={index} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                <div className="flex items-center">
-                  <Phone className="h-5 w-5 text-gray-400 mr-3" />
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">
-                      {call.type === 'incoming' ? 'Incoming' : 'Outgoing'} Call
-                    </p>
-                    <p className="text-sm text-gray-500">{call.date} at {call.time}</p>
-                    {call.duration && (
-                      <p className="text-sm text-gray-500">Duration: {call.duration}</p>
-                    )}
+            {callHistory && callHistory.length > 0 ? (
+              callHistory.map((call: any, index: number) => (
+                <div key={index} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                  <div className="flex items-center">
+                    <Phone className="h-5 w-5 text-gray-400 mr-3" />
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">
+                        {call?.callType === 'INCOMING' ? 'Incoming' : 'Outgoing'} Call
+                      </p>
+                      <p className="text-sm text-gray-500">
+                        {formatDate(call?.dateTime)} at {formatTime(call?.dateTime)}
+                      </p>
+                      {call?.duration && (
+                        <p className="text-sm text-gray-500">Duration: {call?.duration}</p>
+                      )}
+                    </div>
                   </div>
+                  <span
+                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${call.status === 'completed'
+                      ? 'bg-green-100 text-green-800'
+                      : 'bg-red-100 text-red-800'
+                      }`}
+                  >
+                    {call.status}
+                  </span>
                 </div>
-                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                  call.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                }`}>
-                  {call.status}
-                </span>
-              </div>
-            ))}
+              ))
+            ) : (
+              <p className="text-center text-sm text-gray-500">No call history available.</p>
+            )}
           </div>
+
         )}
 
         {activeTab === 'notes' && (
           <div className="space-y-4">
-            {notes.map((note, index) => (
-              <div key={index} className="p-4 bg-gray-50 rounded-lg">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-gray-900">{note.author}</span>
-                  <span className="text-sm text-gray-500">{note.date}</span>
+            {callHistory && callHistory.length > 0 ? (
+              callHistory.map((note: any, index: number) => (
+                <div key={index} className="p-4 bg-gray-50 rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-gray-900">{note?.agentId}</span>
+                    <span className="text-sm text-gray-500">{formatDate(note?.dateTime)}</span>
+                  </div>
+                  <p className="text-gray-700">{note?.comment}</p>
                 </div>
-                <p className="text-gray-700">{note.content}</p>
-              </div>
-            ))}
+              ))
+            ) : (
+              <p className="text-center text-sm text-gray-500">No notes available.</p>
+            )}
           </div>
+
         )}
 
         {activeTab === 'orders' && (
+          // <div className="space-y-4">
+          //   {orders.map((order) => (
+          //     <button
+          //       key={order.id}
+          //       onClick={() => setSelectedOrder(order)}
+          //       className="w-full flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 text-left"
+          //     >
+          //       <div>
+          //         <p className="text-sm font-medium text-gray-900">Order #{order.id}</p>
+          //         <p className="text-sm text-gray-500">{order.date}</p>
+          //         <p className="text-sm font-medium text-gray-900 mt-1">{order.amount}</p>
+          //       </div>
+          //       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${order.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+          //         }`}>
+          //         {order.status}
+          //       </span>
+          //     </button>
+          //   ))}
+          // </div>
+
           <div className="space-y-4">
-            {orders.map((order) => (
-              <button
-                key={order.id}
-                onClick={() => setSelectedOrder(order)}
-                className="w-full flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 text-left"
-              >
-                <div>
-                  <p className="text-sm font-medium text-gray-900">Order #{order.id}</p>
-                  <p className="text-sm text-gray-500">{order.date}</p>
-                  <p className="text-sm font-medium text-gray-900 mt-1">{order.amount}</p>
-                </div>
-                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                  order.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
-                }`}>
-                  {order.status}
-                </span>
-              </button>
-            ))}
+            {orders && orders.length > 0 ? (
+              orders.map((order) => (
+                <button
+                  key={order.id}
+                  onClick={() => setSelectedOrder(order)}
+                  className="w-full flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 text-left"
+                >
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">Order #{order.id}</p>
+                    <p className="text-sm text-gray-500">{order.date}</p>
+                    <p className="text-sm font-medium text-gray-900 mt-1">{order.amount}</p>
+                  </div>
+                  <span
+                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${order.status === 'completed'
+                        ? 'bg-green-100 text-green-800'
+                        : 'bg-yellow-100 text-yellow-800'
+                      }`}
+                  >
+                    {order.status}
+                  </span>
+                </button>
+              ))
+            ) : (
+              <p className="text-center text-sm text-gray-500">No orders found.</p>
+            )}
           </div>
+
         )}
       </div>
 
@@ -372,6 +447,50 @@ const ContactDetails: React.FC<ContactDetailsProps> = ({ contact }) => {
           order={selectedOrder}
         />
       )}
+      {/* CONTACT EDIT MODAL */}
+      {editModal && (
+        <ContactModal
+          handleClose={() => setEditModal(!editModal)}
+          editData={editData}
+        />
+      )}
+      {/* CONTACT DELETE MODAL */}
+      {deleteModal && (
+
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <h2 className="text-xl font-semibold mb-4">Confirm Delete</h2>
+            <p className="mb-6 text-gray-700">
+              Are you sure you want to delete <strong className='uppercase pr-1'>{deleteData?.name}</strong>?
+            </p>
+
+            {errorMessage && (
+              <p className='text-red-700 text-end mb-2'>{errorMessage}</p>
+            )}
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setDeleteModal(!deleteModal)}
+                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={loader}
+                onClick={() => handleDelete()}
+                className="px-4 py-2 text-white bg-red-600 rounded-lg hover:bg-red-700"
+              >
+                {loader ? (
+                  <div className='flex gap-2'>
+                    Loading... <Loader className='animate-spin' />
+                  </div>
+                ) : 'Delete'}
+
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };
